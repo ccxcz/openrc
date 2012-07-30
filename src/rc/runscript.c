@@ -366,37 +366,44 @@ svc_exec(const char *arg1, const char *arg2)
 	sigset_t sigchldmask;
 	sigset_t oldmask;
 
-	/* Setup our signal pipe */
-	if (pipe(signal_pipe) == -1)
-		eerrorx("%s: pipe: %s", service, applet);
-	for (i = 0; i < 2; i++)
-		if ((flags = fcntl(signal_pipe[i], F_GETFD, 0) == -1 ||
-			fcntl(signal_pipe[i], F_SETFD, flags | FD_CLOEXEC) == -1))
-			eerrorx("%s: fcntl: %s", service, strerror(errno));
+	if (arg1 != NULL && !strcmp("start_foreground", arg1)) {
+		/* call exec directly without forking */
+		service_pid = 0;
+		slave_tty = 0;
+	} else { 
+		/* Setup our signal pipe */
+		if (pipe(signal_pipe) == -1)
+			eerrorx("%s: pipe: %s", service, applet);
+		for (i = 0; i < 2; i++)
+			if ((flags = fcntl(signal_pipe[i], F_GETFD, 0) == -1 ||
+				fcntl(signal_pipe[i], F_SETFD, flags | FD_CLOEXEC) == -1))
+				eerrorx("%s: fcntl: %s", service, strerror(errno));
 
-	/* Open a pty for our prefixed output
-	 * We do this instead of mapping pipes to stdout, stderr so that
-	 * programs can tell if they're attached to a tty or not.
-	 * The only loss is that we can no longer tell the difference
-	 * between the childs stdout or stderr */
-	master_tty = slave_tty = -1;
-	if (prefix && isatty(fdout)) {
-		tcgetattr(fdout, &tt);
-		ioctl(fdout, TIOCGWINSZ, &ws);
+		/* Open a pty for our prefixed output
+		 * We do this instead of mapping pipes to stdout, stderr so that
+		 * programs can tell if they're attached to a tty or not.
+		 * The only loss is that we can no longer tell the difference
+		 * between the childs stdout or stderr */
+		master_tty = slave_tty = -1;
+		if (prefix && isatty(fdout)) {
+			tcgetattr(fdout, &tt);
+			ioctl(fdout, TIOCGWINSZ, &ws);
 
-		/* If the below call fails due to not enough ptys then we don't
-		 * prefix the output, but we still work */
-		openpty(&master_tty, &slave_tty, NULL, &tt, &ws);
-		if (master_tty >= 0 &&
-		    (flags = fcntl(master_tty, F_GETFD, 0)) == 0)
-			fcntl(master_tty, F_SETFD, flags | FD_CLOEXEC);
+			/* If the below call fails due to not enough ptys then we don't
+			 * prefix the output, but we still work */
+			openpty(&master_tty, &slave_tty, NULL, &tt, &ws);
+			if (master_tty >= 0 &&
+				(flags = fcntl(master_tty, F_GETFD, 0)) == 0)
+				fcntl(master_tty, F_SETFD, flags | FD_CLOEXEC);
 
-		if (slave_tty >=0 &&
-		    (flags = fcntl(slave_tty, F_GETFD, 0)) == 0)
-			fcntl(slave_tty, F_SETFD, flags | FD_CLOEXEC);
+			if (slave_tty >=0 &&
+				(flags = fcntl(slave_tty, F_GETFD, 0)) == 0)
+				fcntl(slave_tty, F_SETFD, flags | FD_CLOEXEC);
+		}
+
+		service_pid = fork();
 	}
 
-	service_pid = fork();
 	if (service_pid == -1)
 		eerrorx("%s: fork: %s", service, strerror(errno));
 	if (service_pid == 0) {
