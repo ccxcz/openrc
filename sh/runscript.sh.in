@@ -122,7 +122,30 @@ _status()
 }
 
 # Template start / stop / status functions
+
 start()
+{
+	check_config || return 1
+	prepare || return 1
+	start_daemon
+}
+
+check_config() {
+	true
+}
+prepare() {
+	true
+}
+
+if yesno "${command_background}"; then
+	start_foreground()
+	{
+		[ -n "${pidfile}" ] && echo $$ >"${pidfile}"
+		exec $command $command_args
+	}
+fi
+
+start_daemon()
 {
 	[ -n "$command" ] || return 0
 	local _background=
@@ -155,6 +178,19 @@ start()
 }
 
 stop()
+{
+	if [ "${RC_CMD}" = "restart" ] ; then
+		checkconfig || return 1
+	fi
+	stop_daemon
+	cleanup
+}
+
+cleanup() {
+	true
+}
+
+stop_daemon()
 {
 	[ -n "$command" -o -n "$procname" -o -n "$pidfile" ] || return 0
 	ebegin "Stopping ${name:-$RC_SVCNAME}"
@@ -206,6 +242,12 @@ fi
 
 # Load our script
 sourcex "$RC_SERVICE"
+
+_init_override=${RC_SERVICE%/*}/../init.override
+if [ -f "${_init_override}/${RC_SVCNAME}" ]; then
+	# Load overrides for our script
+	sourcex "${_init_override}/${RC_SVCNAME}"
+fi
 
 for _d in $required_dirs; do
 	if [ ! -d $_d ]; then
